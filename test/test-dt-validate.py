@@ -211,6 +211,39 @@ class TestDTValidate(unittest.TestCase):
         self.assertIn("formatted", diagnostics[0])
         self.assertIn("schema", diagnostics[0])
 
+    def test_cli_cache_output(self):
+        dtc = shutil.which('dtc')
+        if not dtc:
+            self.skipTest("dtc not found")
+
+        with tempfile.NamedTemporaryFile(suffix=".dtb") as f, \
+             tempfile.NamedTemporaryFile(suffix=".json") as schema, \
+             tempfile.TemporaryDirectory() as cache_dir:
+            res = subprocess.run([dtc, '-Odtb', '-o', f.name, 'test/device-fail.dts'],
+                                 capture_output=True)
+            self.assertEqual(res.returncode, 0, msg='dtc failed:\n' + res.stderr.decode())
+
+            res = subprocess.run([
+                sys.executable, '-c',
+                'import dtschema.mk_schema as m; m.main()',
+                '-j', '-o', schema.name, os.path.abspath('test/schemas')],
+                capture_output=True, text=True)
+            self.assertEqual(res.returncode, 0, msg=res.stderr)
+
+            cmd = [
+                sys.executable, '-c',
+                'import dtschema.dtb_validate as d; d.main()',
+                '--format', 'json', '--cache-dir', cache_dir,
+                '-s', schema.name, f.name]
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(res.returncode, 0, msg=res.stderr)
+            first = json.loads(res.stdout)
+
+            res = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(res.returncode, 0, msg=res.stderr)
+            self.assertEqual(json.loads(res.stdout), first)
+            self.assertGreater(len(os.listdir(cache_dir)), 0)
+
 
 
 if __name__ == '__main__':
