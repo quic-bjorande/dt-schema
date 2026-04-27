@@ -421,6 +421,24 @@ class DTValidator:
                     self.compat_map[c] = _id
 
         self.schemas['version'] = dtschema.__version__
+        self._schema_validators = {}
+        self._select_validators = {}
+
+    def _schema_validator(self, schema_id):
+        validator = self._schema_validators.get(schema_id)
+        if validator is None:
+            validator = self.DtValidator(self.schemas[schema_id], registry=self.registry)
+            self._schema_validators[schema_id] = validator
+        return validator
+
+    def _select_validator(self, schema_id):
+        validator = self._select_validators.get(schema_id)
+        if validator is None:
+            schema = {'if': self.schemas[schema_id]['select'],
+                      'then': self.schemas[schema_id]}
+            validator = self.DtValidator(schema, registry=self.registry)
+            self._select_validators[schema_id] = validator
+        return validator
 
     def retrieve(self, uri):
         try:
@@ -448,8 +466,7 @@ class DTValidator:
                 if inst_compat in self.compat_map:
                     schema_id = self.compat_map[inst_compat]
                     if self._filter_match(schema_id, filter):
-                        schema = self.schemas[schema_id]
-                        for error in self.DtValidator(schema, registry=self.registry).iter_errors(instance):
+                        for error in self._schema_validator(schema_id).iter_errors(instance):
                             self.annotate_error(schema_id, error)
                             yield error
                     break
@@ -460,9 +477,7 @@ class DTValidator:
         for schema_id in self.always_schemas:
             if not self._filter_match(schema_id, filter):
                 continue
-            schema = {'if': self.schemas[schema_id]['select'],
-                      'then': self.schemas[schema_id]}
-            for error in self.DtValidator(schema, registry=self.registry).iter_errors(instance):
+            for error in self._select_validator(schema_id).iter_errors(instance):
                 self.annotate_error(schema_id, error)
                 yield error
 
